@@ -1,0 +1,52 @@
+#include <mega8535.h>
+#include <alcd.h>
+#include <delay.h>
+#include <stdio.h>
+
+// Fungsi inisialisasi ADC
+void adc_init() {
+    ADMUX = (1 << REFS0); // AVCC with external capacitor at AREF pin
+    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); // ADC Enable and prescaler of 128
+}
+
+// Fungsi untuk membaca nilai ADC
+unsigned int adc_read(unsigned char channel) {
+    channel &= 0b00000111;
+    ADMUX = (ADMUX & 0xF8) | channel;
+    ADCSRA |= (1 << ADSC);
+    while (ADCSRA & (1 << ADSC));
+    return ADCW;
+}
+
+// Fungsi untuk mengonversi nilai ADC ke suhu dalam derajat Celsius
+int get_temperature() {
+    unsigned int adc_value = adc_read(0);
+    float voltage = adc_value * 5.0 / 1024.0;
+    return (int)(voltage * 100.0 * 10);
+}
+
+// ISR untuk INT0 (Interrupt Eksternal 0)
+interrupt [EXT_INT0] void ext_int0_isr(void) {
+    lcd_clear();
+    lcd_gotoxy(0, 0);
+    lcd_puts("Reset");
+    delay_ms(1000);
+}
+
+void main(void) {
+    adc_init();
+    lcd_init(16);
+    GICR |= (1 << INT0);
+    MCUCR |= (1 << ISC01);
+    #asm("sei");
+
+    while (1) {
+        int temperature = get_temperature();
+        char temp_str[16];
+        sprintf(temp_str, "Temp: %d.%d C", temperature / 10, temperature % 10);
+        lcd_clear();
+        lcd_gotoxy(0, 0);
+        lcd_puts(temp_str);
+        delay_ms(1000);
+    }
+}

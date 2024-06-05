@@ -1,0 +1,57 @@
+#include <mega8535.h>
+#include <alcd.h>
+#include <delay.h>
+#include <stdio.h>
+
+// Fungsi inisialisasi ADC
+void adc_init() {
+    // AVCC dengan kapasitor eksternal di pin AREF
+    ADMUX = (1<<REFS0);
+    // ADC Enable dan prescaler 128
+    // 12 MHz/128 = 93.75 KHz
+    ADCSRA = (1<<ADEN) | (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0);
+}
+
+// Fungsi untuk membaca nilai ADC
+unsigned int adc_read(unsigned char channel) {
+    // Pilih saluran ADC (0-7)
+    channel &= 0b00000111;
+    ADMUX = (ADMUX & 0xF8) | channel;
+    // Mulai konversi tunggal
+    ADCSRA |= (1<<ADSC);
+    // Tunggu konversi selesai
+    while(ADCSRA & (1<<ADSC));
+    return ADCW; // Nilai ADC 10-bit
+}
+
+// Fungsi untuk mengonversi nilai ADC ke suhu dalam derajat Celsius
+int get_temperature() {
+    unsigned int adc_value = adc_read(0); // Baca nilai ADC dari saluran 0 (PA0)
+    // Konversi nilai ADC langsung ke suhu (LM35: 10mV per derajat Celsius)
+    int temperature = (adc_value * 500) / 1024; // 500 = 5V * 100 (10mV per derajat C)
+    return temperature; // Mengembalikan suhu dalam format integer
+}
+
+void main(void) {
+    // Inisialisasi ADC
+    adc_init();
+    // Inisialisasi LCD
+    lcd_init(16);
+
+    while (1) {
+        // Membaca suhu dari sensor LM35
+        int temperature = get_temperature();
+        
+        // Mengonversi suhu ke string untuk ditampilkan
+        char temp_str[16];
+        sprintf(temp_str, "Temp: %d C", temperature);
+
+        // Menampilkan suhu pada LCD
+        lcd_clear();
+        lcd_gotoxy(0, 0);
+        lcd_puts(temp_str);
+        
+        // Delay 1 detik sebelum pembacaan berikutnya
+        delay_ms(1000);
+    }
+}

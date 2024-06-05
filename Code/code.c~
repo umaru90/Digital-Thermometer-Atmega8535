@@ -1,0 +1,98 @@
+#include <mega8535.h>
+#include <alcd.h>
+#include <delay.h>
+#include <stdio.h>
+
+// Inisialisasi ADC
+void adc_init() {
+    ADMUX = (1 << REFS0);
+    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+}
+
+// Membaca nilai ADC dari channel yang dipilih
+unsigned int adc_read(unsigned char channel) {
+    channel &= 0b00000111;
+    ADMUX = (ADMUX & 0xF8) | channel;
+    ADCSRA |= (1 << ADSC);
+    while (ADCSRA & (1 << ADSC));
+    return ADCW;
+}
+
+// Mendapatkan suhu dari sensor LM35
+float get_temperature() {
+    unsigned int adc_value = adc_read(0);
+    return adc_value * 0.48828125; // (5 / 1024) * 100
+}
+
+// Inisialisasi Timer1
+void timer1_init() {
+    TCCR1B = (1 << WGM12) | (1 << CS11) | (1 << CS10);
+    OCR1A = 187;
+    TCNT1 = 0;
+}
+
+// Inisialisasi pin dan port
+void pin_init() {
+    DDRA = 0x00; // Port A sebagai input untuk sensor LM35
+    DDRB = 0x07; // Port B sebagai output untuk LED (PIN.B0 - PIN.B2)
+    DDRC = 0xFF; // Port C sebagai output untuk LCD
+}
+
+// Mengatur LED sesuai dengan suhu
+void set_led(float temperature) {
+    PORTB &= ~(1 << PORTB0); // Matikan LED Biru
+    PORTB &= ~(1 << PORTB1); // Matikan LED Hijau
+    PORTB &= ~(1 << PORTB2); // Matikan LED Merah
+    
+    if (temperature < 25.0) {
+        PORTB |= (1 << PORTB0); // Nyalakan LED Biru
+    } else if (temperature <= 35.0) {
+        PORTB |= (1 << PORTB1); // Nyalakan LED Hijau
+    } else {
+        PORTB |= (1 << PORTB2); // Nyalakan LED Merah
+    }
+}
+
+// Mendapatkan status ruangan berdasarkan suhu
+flash char status_dingin[] = "Dingin";
+flash char status_hangat[] = "Hangat";
+flash char status_panas[] = "Panas";
+
+flash char* get_room_status(float temperature) {
+    if (temperature < 25.0) {
+        return status_dingin;
+    } else if (temperature <= 35.0) {
+        return status_hangat;
+    } else {
+        return status_panas;
+    }
+}
+
+// Fungsi utama
+void main(void) {
+    float temperature;
+    char temp_str[16];
+    char status_str[16];
+    
+    adc_init();
+    lcd_init(16);
+    timer1_init();
+    pin_init();
+    
+    while (1) {
+        temperature = get_temperature();
+        set_led(temperature);
+        
+        sprintf(temp_str, "Temp: %.1f C", temperature);
+        sprintf(status_str, "Status: %s", get_room_status(temperature));
+        
+        lcd_clear();
+        lcd_gotoxy(0, 0);
+        lcd_puts(temp_str);
+        
+        lcd_gotoxy(0, 1);
+        lcd_puts(status_str);
+        
+        delay_ms(1000);
+    }
+}

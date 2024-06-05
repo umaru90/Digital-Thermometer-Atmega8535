@@ -1,0 +1,90 @@
+#include <mega8535.h>
+#include <alcd.h>
+#include <delay.h>
+#include <stdio.h>
+
+// Function to initialize ADC
+void adc_init() {
+    ADMUX = (1 << REFS0); // AVCC with external capacitor at AREF pin
+    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0); // ADC Enable and prescaler of 128
+}
+
+// Function to read ADC value
+unsigned int adc_read(unsigned char channel) {
+    channel &= 0b00000111; // Select ADC channel (0-7)
+    ADMUX = (ADMUX & 0xF8) | channel; // Clear lower bits and set channel
+    ADCSRA |= (1 << ADSC); // Start conversion
+    while (ADCSRA & (1 << ADSC)); // Wait for conversion to complete
+    return ADCW; // Return 10-bit ADC value
+}
+
+// Function to convert ADC value to temperature in Celsius
+int get_temperature() {
+    unsigned int adc_value = adc_read(0); // Read ADC from channel 0 (PA0)
+    float voltage = adc_value * 5.0 / 1024.0; // Convert ADC value to voltage
+    return (int)(voltage * 100.0 * 10); // Convert voltage to temperature
+}
+
+// Initialize Timer1
+void timer1_init() {
+    TCCR1B = (1 << WGM12) | (1 << CS11) | (1 << CS10); // CTC mode, prescaler 64
+    OCR1A = 187; // Set output compare register for 1ms tick
+    TCNT1 = 0; // Initialize Timer1 counter
+}
+
+// Function to get the current time in milliseconds
+unsigned long millis() {
+    return (unsigned long)TCNT1;
+}
+
+// ISR for INT0 (External Interrupt 0)
+interrupt [EXT_INT0] void ext_int0_isr(void) {
+    lcd_clear();
+    lcd_gotoxy(0, 0);
+    lcd_puts("Reset");
+    delay_ms(1000);
+}
+
+void main(void) {
+    // Variable declarations
+    int temperature;
+    char temp_str[16];
+    char time_str[16];
+    unsigned long elapsed_time;
+
+    // Initialize ADC, LCD, Timer1, and External Interrupt
+    adc_init();
+    lcd_init(16);
+    timer1_init();
+    GICR |= (1 << INT0); // Enable external interrupt INT0
+    MCUCR |= (1 << ISC01); // Trigger INT0 on falling edge
+    #asm("sei"); // Enable global interrupts
+
+    while (1) {
+        TCNT1 = 0; // Reset Timer1 counter
+
+        // Read temperature from sensor
+        temperature = get_temperature();
+
+        // Record elapsed time
+        elapsed_time = millis();
+
+        // Convert temperature to string for display
+        sprintf(temp_str, "Temp: %d.%d C", temperature / 10, temperature % 10);
+
+        // Convert elapsed time to string for display
+        sprintf(time_str, "Time: %lu ms", elapsed_time);
+
+        // Display temperature on LCD
+        lcd_clear();
+        lcd_gotoxy(0, 0);
+        lcd_puts(temp_str);
+
+        // Display elapsed time on LCD
+        lcd_gotoxy(0, 1);
+        lcd_puts(time_str);
+
+        // Delay 1 second before the next reading
+        delay_ms(1000);
+    }
+}
